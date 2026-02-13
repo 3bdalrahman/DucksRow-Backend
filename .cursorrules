@@ -1,0 +1,45 @@
+# DucksRow – Backend (Dynamic Outing Planner)
+
+## Project context
+
+- **Stack:** Go (Golang), Fiber v2, GORM, PostgreSQL with PostGIS, JWT auth.
+- **Pattern:** Hybrid Relational + Document: core entities in tables, variable per-type data in JSONB (`Place.Details`, `PlaceType.FormSchema`, `PlanItem.SelectedOptions`).
+- **Location data:** PostGIS `geography(Point, 4326)` for places; use `models.GeographyPoint` and spatial queries where needed.
+
+## Code layout
+
+- **`cmd/server`** – Application entrypoint (`main.go`). Only wiring: DB connect, migrate, middleware, route setup.
+- **`database`** – Connection, DSN, migration entrypoint. PostGIS extension is enabled on startup if not exists.
+- **`models`** – GORM structs and table names. JSONB fields use custom types with `Value()` / `Scan()`. No HTTP or business logic here.
+- **`handlers`** – HTTP layer only: parse request, validate minimal input, call services, write response. No business logic.
+- **`routes`** – Route registration and middleware attachment. No business logic.
+- **`middleware`** – Auth (JWT), logging, etc. No business logic.
+
+## Architecture rules
+
+1. **Business logic lives in services, not in handlers.** Handlers should call `services.SomeService.DoThing(...)` (or similar) and return results. If a feature grows, add a `services` package and move logic there.
+2. **Handlers stay thin.** Parse body/params → call service → return JSON. No direct DB calls in handlers beyond what’s needed for trivial reads; prefer services for anything non-trivial.
+3. **Models are data only.** No methods that perform DB or HTTP operations. Keep JSONB types in `models` with correct GORM tags (`gorm:"type:jsonb"`).
+4. **Config via environment.** No secrets in code. Use `DATABASE_URL` or `DB_*`, `JWT_SECRET`, `PORT`, etc.
+
+## Style and idioms
+
+- **Idiomatic Go:** short names in small scopes, `err` for errors, early returns, avoid nesting.
+- **Errors:** return errors from services; handlers map them to HTTP status and a clear `error` message in JSON.
+- **JSON:** use `json` struct tags; omit sensitive fields (e.g. `PasswordHash`) with `json:"-"`.
+- **GORM:** use `gorm` tags for columns, indexes, and types. For JSONB use `gorm:"type:jsonb"` and custom types that implement `driver.Valuer` and `sql.Scanner`.
+
+## Database
+
+- Migrations: GORM AutoMigrate from `models.MigrateAll`. PostGIS is enabled in `database.Migrate` before running migrations.
+- New models: add to `models/setup.go` in dependency order (e.g. User before Place, PlaceType before Place).
+
+## Auth
+
+- JWT in `Authorization: Bearer <token>`. Protected routes use `middleware.Protected(db)`.
+- Register: bcrypt hash, then create user and return JWT. Login: verify password, return JWT. Logout: client discards token (optional blacklist later).
+
+## Testing (future)
+
+- Prefer table-driven tests and interfaces for services so handlers can be tested with mocks.
+- Use a test DB or in-memory SQLite for integration tests if needed; PostGIS-specific tests may require real Postgres.

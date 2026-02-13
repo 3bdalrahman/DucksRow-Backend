@@ -1,0 +1,143 @@
+{
+	"info": {
+		"_postman_id": "ducksrow-backend-001",
+		"name": "DucksRow Backend",
+		"description": "Auth, Places, and Admin routes for Dynamic Outing Planner API. Use Login with admin credentials to get a token for Admin Stats.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080"
+		},
+		{
+			"key": "token",
+			"value": ""
+		}
+	],
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Register (Signup)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"johndoe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"securePassword123\"\n}"
+						},
+						"url": "{{baseUrl}}/auth/register",
+						"description": "Register a new user. Returns JWT and user object. Store token for protected routes."
+					}
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"  var json = pm.response.json();",
+									"  if (json.token) pm.collectionVariables.set('token', json.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"securePassword123\"\n}"
+						},
+						"url": "{{baseUrl}}/auth/login",
+						"description": "Login with email and password. Returns JWT. Collection variable 'token' is set from response for use in Create Place."
+					}
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/auth/logout",
+						"description": "Logout. Client should discard the token; server may add blacklist later."
+					}
+				}
+			]
+		},
+		{
+			"name": "Places",
+			"item": [
+				{
+					"name": "Create Place (JSONB payload)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Cool Restaurant\",\n  \"description\": \"A nice place to eat\",\n  \"address\": \"123 Main St, City\",\n  \"lat\": 40.7128,\n  \"lon\": -74.0060,\n  \"place_type_id\": \"00000000-0000-0000-0000-000000000001\",\n  \"is_verified\": false,\n  \"details\": {\n    \"cuisine\": \"Italian\",\n    \"price_range\": \"$$\",\n    \"opening_hours\": \"9am-10pm\",\n    \"capacity\": 50\n  }\n}"
+						},
+						"url": "{{baseUrl}}/api/places",
+						"description": "Create a place with dynamic JSONB details. Requires a valid JWT (run Login first). place_type_id must be a valid UUID of an existing PlaceType."
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin",
+			"item": [
+				{
+					"name": "Admin Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/admin/stats",
+						"description": "Returns welcome message for admins. Requires JWT with role 'admin' (log in with your seeded admin user via Auth > Login using ADMIN_EMAIL and ADMIN_PASSWORD). Returns 403 if token is missing or user is not admin."
+					}
+				}
+			]
+		},
+		{
+			"name": "Health",
+			"request": {
+				"method": "GET",
+				"url": "{{baseUrl}}/health",
+				"description": "Simple health check."
+			}
+		}
+	]
+}
