@@ -12,11 +12,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// JWTClaims holds the claims we store in the JWT.
+// JWTClaims holds the claims we store in the JWT (role is determined via RBAC at request time).
 type JWTClaims struct {
 	UserID string `json:"user_id"` // UUID string
 	Email  string `json:"email"`
-	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 

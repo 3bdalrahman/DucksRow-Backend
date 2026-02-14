@@ -42,6 +42,7 @@ func (j *FormSchemaJSON) Scan(value interface{}) error {
 type PlaceType struct {
 	ID         uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
 	Name       string         `gorm:"size:100;not null;uniqueIndex" json:"name"`
+	Name_local string         `gorm:"size:100;not null;index;default:''" json:"name_local"`
 	Slug       string         `gorm:"size:100;not null;uniqueIndex" json:"slug"`
 	FormSchema FormSchemaJSON `gorm:"type:jsonb" json:"form_schema"`
 	CreatedAt  time.Time      `json:"created_at"`

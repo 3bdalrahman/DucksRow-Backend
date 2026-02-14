@@ -1,17 +1,27 @@
 package handlers
 
 import (
-	"strings"
+	"context"
 	"time"
 
+	rbacerrors "ducksrow/backend/errors"
 	"ducksrow/backend/middleware"
 	"ducksrow/backend/models"
+	"ducksrow/backend/services"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
+
+// authService is the interface the auth handlers depend on (consumer-side, per constitution).
+type authService interface {
+	RegisterUser(ctx context.Context, username, email, passwordHash string) (*models.User, []string, error)
+	AuthenticateUser(ctx context.Context, email, password string) (*models.User, []string, error)
+}
+
+// Ensure authService is implemented by *services.AuthService (compile-time check).
+var _ authService = (*services.AuthService)(nil)
 
 // RegisterRequest is the JSON body for registration.
 type RegisterRequest struct {
@@ -26,86 +36,72 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// AuthResponse is returned on login/register with token and user info.
+// AuthResponse is returned on login/register with token, user, and role slugs.
 type AuthResponse struct {
 	Token string       `json:"token"`
 	User  *models.User `json:"user"`
+	Roles []string     `json:"roles"`
 }
 
-// Register hashes the password with bcrypt and creates a new user.
-func Register(db *gorm.DB, secret string) fiber.Handler {
+// Register hashes the password and delegates to AuthService; returns token and user with roles.
+func Register(svc authService, secret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var req RegisterRequest
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+			return RespondError(c, rbacerrors.ErrValidation)
 		}
 		if req.Username == "" || req.Email == "" || req.Password == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "username, email and password required"})
+			return RespondError(c, rbacerrors.ErrValidation)
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to hash password"})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to hash password", "code": "INTERNAL_ERROR"})
 		}
-		user := models.User{
-			Username:     req.Username,
-			Email:        req.Email,
-			PasswordHash: string(hash),
-		}
-		if err := db.Create(&user).Error; err != nil {
-			if isUniqueViolation(err) {
-				return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "email or username already exists"})
-			}
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-		token, err := issueJWT(secret, user.ID.String(), user.Email, user.Role)
+		user, roles, err := svc.RegisterUser(c.Context(), req.Username, req.Email, string(hash))
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create token"})
+			return RespondError(c, err)
 		}
-		return c.Status(fiber.StatusCreated).JSON(AuthResponse{Token: token, User: &user})
+		token, err := issueJWT(secret, user.ID.String(), user.Email)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create token", "code": "INTERNAL_ERROR"})
+		}
+		return c.Status(fiber.StatusCreated).JSON(AuthResponse{Token: token, User: user, Roles: roles})
 	}
 }
 
-// Login checks credentials and returns a JWT.
-func Login(db *gorm.DB, secret string) fiber.Handler {
+// Login verifies credentials via AuthService and returns token and user with roles.
+func Login(svc authService, secret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var req LoginRequest
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+			return RespondError(c, rbacerrors.ErrValidation)
 		}
 		if req.Email == "" || req.Password == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "email and password required"})
+			return RespondError(c, rbacerrors.ErrValidation)
 		}
-		var user models.User
-		if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid email or password"})
-		}
-		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid email or password"})
-		}
-		token, err := issueJWT(secret, user.ID.String(), user.Email, user.Role)
+		user, roles, err := svc.AuthenticateUser(c.Context(), req.Email, req.Password)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create token"})
+			return RespondError(c, err)
 		}
-		return c.JSON(AuthResponse{Token: token, User: &user})
+		token, err := issueJWT(secret, user.ID.String(), user.Email)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create token", "code": "INTERNAL_ERROR"})
+		}
+		return c.JSON(AuthResponse{Token: token, User: user, Roles: roles})
 	}
 }
 
 // Logout is handled client-side by discarding the token.
-// Optionally we could maintain a token blacklist; for now we return success.
 func Logout() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "logged out; discard token on client"})
 	}
 }
 
-func issueJWT(secret string, userID string, email string, role string) (string, error) {
-	if role == "" {
-		role = models.RoleUser
-	}
+func issueJWT(secret string, userID string, email string) (string, error) {
 	claims := &middleware.JWTClaims{
 		UserID: userID,
 		Email:  email,
-		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -113,15 +109,4 @@ func issueJWT(secret string, userID string, email string, role string) (string, 
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secret))
-}
-
-// isUniqueViolation returns true if the error is a Postgres unique constraint violation.
-func isUniqueViolation(err error) bool {
-	// GORM wraps DB errors; check for common unique violation message or code.
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "duplicate key") ||
-		strings.Contains(err.Error(), "unique constraint") ||
-		strings.Contains(err.Error(), "23505") // PostgreSQL unique_violation
 }

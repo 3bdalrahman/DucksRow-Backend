@@ -29,7 +29,10 @@ func main() {
 	if err := database.Migrate(db); err != nil {
 		log.Fatalf("database migrate: %v", err)
 	}
-
+	// Seed RBAC first so roles exist before SeedAdmin assigns the admin role
+	if err := database.SeedRBAC(db); err != nil {
+		log.Fatalf("seed RBAC: %v", err)
+	}
 	if err := database.SeedAdmin(db); err != nil {
 		log.Fatalf("seed admin: %v", err)
 	}

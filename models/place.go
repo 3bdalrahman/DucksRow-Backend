@@ -42,6 +42,7 @@ func (j *DetailsJSON) Scan(value interface{}) error {
 type Place struct {
 	ID          uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
 	Name        string         `gorm:"size:255;not null" json:"name"`
+	Name_local  string         `gorm:"size:100;not null;index;default:''" json:"name_local"`
 	Description string         `gorm:"type:text" json:"description"`
 	Address     string         `gorm:"size:512" json:"address"`
 	Latitude    float64        `json:"latitude"`

@@ -2,18 +2,14 @@
 	"info": {
 		"_postman_id": "ducksrow-backend-001",
 		"name": "DucksRow Backend",
-		"description": "Auth, Places, and Admin routes for Dynamic Outing Planner API. Use Login with admin credentials to get a token for Admin Stats.",
+		"description": "Auth, Places, Admin, and RBAC routes. Use Login with admin credentials (ADMIN_EMAIL / ADMIN_PASSWORD) to get a token for Admin and RBAC endpoints. Register/Login return token, user, and roles[].",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
-		{
-			"key": "baseUrl",
-			"value": "http://localhost:8080"
-		},
-		{
-			"key": "token",
-			"value": ""
-		}
+		{ "key": "baseUrl", "value": "http://localhost:8080" },
+		{ "key": "token", "value": "" },
+		{ "key": "userId", "value": "" },
+		{ "key": "roleId", "value": "" }
 	],
 	"item": [
 		{
@@ -23,18 +19,13 @@
 					"name": "Register (Signup)",
 					"request": {
 						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"username\": \"johndoe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"securePassword123\"\n}"
 						},
 						"url": "{{baseUrl}}/auth/register",
-						"description": "Register a new user. Returns JWT and user object. Store token for protected routes."
+						"description": "Register a new user. Returns JWT, user, and roles[] (e.g. [\"client\"]). Store token for protected routes."
 					}
 				},
 				{
@@ -47,6 +38,7 @@
 									"if (pm.response.code === 200) {",
 									"  var json = pm.response.json();",
 									"  if (json.token) pm.collectionVariables.set('token', json.token);",
+									"  if (json.user && json.user.id) pm.collectionVariables.set('userId', json.user.id);",
 									"}"
 								],
 								"type": "text/javascript"
@@ -55,32 +47,22 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"securePassword123\"\n}"
 						},
 						"url": "{{baseUrl}}/auth/login",
-						"description": "Login with email and password. Returns JWT. Collection variable 'token' is set from response for use in Create Place."
+						"description": "Login with email and password. Returns JWT, user, and roles[]. Use admin credentials for Admin/RBAC endpoints. Collection variable 'token' is set from response."
 					}
 				},
 				{
 					"name": "Logout",
 					"request": {
 						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{token}}"
-							}
-						],
+						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
 						"url": "{{baseUrl}}/auth/logout",
-						"description": "Logout. Client should discard the token; server may add blacklist later."
+						"description": "Logout. Client should discard the token."
 					}
 				}
 			]
@@ -93,21 +75,15 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "Authorization",
-								"value": "Bearer {{token}}"
-							}
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Authorization", "value": "Bearer {{token}}" }
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"name\": \"Cool Restaurant\",\n  \"description\": \"A nice place to eat\",\n  \"address\": \"123 Main St, City\",\n  \"lat\": 40.7128,\n  \"lon\": -74.0060,\n  \"place_type_id\": \"00000000-0000-0000-0000-000000000001\",\n  \"is_verified\": false,\n  \"details\": {\n    \"cuisine\": \"Italian\",\n    \"price_range\": \"$$\",\n    \"opening_hours\": \"9am-10pm\",\n    \"capacity\": 50\n  }\n}"
 						},
 						"url": "{{baseUrl}}/api/places",
-						"description": "Create a place with dynamic JSONB details. Requires a valid JWT (run Login first). place_type_id must be a valid UUID of an existing PlaceType."
+						"description": "Create a place. Requires JWT with places:write (e.g. client, editor, admin). place_type_id must be a valid UUID."
 					}
 				}
 			]
@@ -119,15 +95,161 @@
 					"name": "Admin Stats",
 					"request": {
 						"method": "GET",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{token}}"
-							}
-						],
+						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
 						"url": "{{baseUrl}}/admin/stats",
-						"description": "Returns welcome message for admins. Requires JWT with role 'admin' (log in with your seeded admin user via Auth > Login using ADMIN_EMAIL and ADMIN_PASSWORD). Returns 403 if token is missing or user is not admin."
+						"description": "Returns welcome message for admins. Requires JWT with admin role (user_roles). Login with ADMIN_EMAIL / ADMIN_PASSWORD."
 					}
+				}
+			]
+		},
+		{
+			"name": "RBAC",
+			"description": "All RBAC endpoints require JWT with admin role. Use Auth > Login with admin credentials first.",
+			"item": [
+				{
+					"name": "Permissions",
+					"item": [
+						{
+							"name": "List Permissions",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/permissions",
+								"description": "Returns the fixed permission catalog (key, resource, action, description). No pagination."
+							}
+						}
+					]
+				},
+				{
+					"name": "Roles",
+					"item": [
+						{
+							"name": "List Roles",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/roles?page=1&limit=20",
+								"description": "Paginated list of roles with their permissions. Query: page (default 1), limit (default 20, max 100)."
+							}
+						},
+						{
+							"name": "Create Role",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"if (pm.response.code === 201) {",
+											"  var json = pm.response.json();",
+											"  if (json.data && json.data.id) pm.collectionVariables.set('roleId', json.data.id);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" },
+									{ "key": "Authorization", "value": "Bearer {{token}}" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"slug\": \"content-manager\",\n  \"name\": \"Content Manager\",\n  \"permissions\": [\"places:read\", \"places:write\", \"place_types:read\", \"place_types:write\"]\n}"
+								},
+								"url": "{{baseUrl}}/api/roles",
+								"description": "Create a role. slug: lowercase alphanumeric + hyphens; permissions: keys from catalog (GET /api/permissions)."
+							}
+						},
+						{
+							"name": "Get Role",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/roles/{{roleId}}",
+								"description": "Get a single role by ID with its permissions. Use roleId from List Roles or Create Role."
+							}
+						},
+						{
+							"name": "Update Role",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" },
+									{ "key": "Authorization", "value": "Bearer {{token}}" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"name\": \"Senior Content Manager\",\n  \"permissions\": [\"places:read\", \"places:write\", \"places:delete\", \"place_types:read\", \"place_types:write\"]\n}"
+								},
+								"url": "{{baseUrl}}/api/roles/{{roleId}}",
+								"description": "Update role name and/or permissions (full replacement). System roles: permissions can only be superset."
+							}
+						},
+						{
+							"name": "Delete Role",
+							"request": {
+								"method": "DELETE",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/roles/{{roleId}}",
+								"description": "Soft-delete a role. Returns 403 for system roles (e.g. admin)."
+							}
+						}
+					]
+				},
+				{
+					"name": "User Roles",
+					"item": [
+						{
+							"name": "List User Roles",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/users/{{userId}}/roles",
+								"description": "List roles assigned to a user. userId: UUID from Register/Login response (user.id)."
+							}
+						},
+						{
+							"name": "Assign Role to User",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Content-Type", "value": "application/json" },
+									{ "key": "Authorization", "value": "Bearer {{token}}" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"role_id\": \"{{roleId}}\"\n}"
+								},
+								"url": "{{baseUrl}}/api/users/{{userId}}/roles",
+								"description": "Assign a role to a user. role_id: UUID from GET /api/roles. Idempotent. Creates audit entry."
+							}
+						},
+						{
+							"name": "Unassign Role from User",
+							"request": {
+								"method": "DELETE",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/users/{{userId}}/roles/{{roleId}}",
+								"description": "Remove a role from a user. Creates audit entry."
+							}
+						}
+					]
+				},
+				{
+					"name": "Audit",
+					"item": [
+						{
+							"name": "List Role Audit Log",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+								"url": "{{baseUrl}}/api/roles/audit?page=1&limit=20",
+								"description": "Paginated audit log of role assign/remove. Query: page, limit (max 100), user_id (filter by target user), role_id, action (assign|remove)."
+							}
+						}
+					]
 				}
 			]
 		},
