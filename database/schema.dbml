@@ -1,0 +1,163 @@
+// Ducks Row - Database schema (DBML for dbdiagram.io)
+// Generated from backend/models
+// use https://dbdiagram.io/ 
+Project DucksRow {
+  database_type: 'PostgreSQL'
+  Note: 'Ducks Row backend schema - users, RBAC, places, plans'
+}
+
+Table users {
+  id uuid [pk, note: 'UUID primary key']
+  username varchar(100) [not null, unique, note: 'Login name']
+  name varchar(100) [not null, default: '']
+  name_local varchar(100) [not null, default: '']
+  date_of_birth timestamp [not null]
+  gender varchar(50) [not null, default: '']
+  email varchar(255) [not null, unique]
+  password_hash varchar(255) [not null]
+  avatar_url varchar(512)
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [note: 'Soft delete']
+  
+  indexes {
+    username
+    name
+    name_local
+    date_of_birth
+    gender
+    email
+    deleted_at
+  }
+}
+
+Table roles {
+  id uuid [pk]
+  slug varchar(100) [not null, unique]
+  name varchar(255) [not null, unique]
+  is_system boolean [not null, default: false]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [note: 'Soft delete']
+  
+  indexes {
+    slug
+    name
+    deleted_at
+  }
+}
+
+Table user_roles {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  role_id uuid [not null, ref: > roles.id]
+  created_at timestamp [not null]
+  
+  indexes {
+    (user_id, role_id) [unique]
+  }
+}
+
+Table role_permissions {
+  id uuid [pk]
+  role_id uuid [not null, ref: > roles.id]
+  permission varchar(100) [not null]
+  created_at timestamp [not null]
+  
+  indexes {
+    (role_id, permission) [unique]
+    permission
+  }
+}
+
+Table role_audit_logs {
+  id uuid [pk]
+  actor_id uuid [not null, ref: > users.id, note: 'User who performed the action']
+  action varchar(20) [not null, note: 'assign | remove']
+  target_user_id uuid [not null, ref: > users.id]
+  role_id uuid [not null, note: 'No FK - record survives role deletion']
+  role_slug varchar(100) [not null]
+  created_at timestamp [not null]
+  
+  indexes {
+    (actor_id, target_user_id)
+    created_at
+  }
+}
+
+Table place_types {
+  id uuid [pk]
+  name varchar(100) [not null, unique]
+  name_local varchar(100) [not null, default: '']
+  slug varchar(100) [not null, unique]
+  form_schema jsonb [note: 'Dynamic form definition (JSON)']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [note: 'Soft delete']
+  
+  indexes {
+    name
+    name_local
+    slug
+    deleted_at
+  }
+}
+
+Table places {
+  id uuid [pk]
+  name varchar(255) [not null]
+  name_local varchar(100) [not null, default: '']
+  description text
+  address varchar(512)
+  latitude float
+  longitude float
+  details jsonb [note: 'Dynamic attributes per PlaceType']
+  place_type_id uuid [not null, ref: > place_types.id]
+  owner_id uuid [ref: > users.id, note: 'Nullable - place may have no owner']
+  is_verified boolean [default: false]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [note: 'Soft delete']
+  
+  indexes {
+    name_local
+    place_type_id
+    owner_id
+    deleted_at
+  }
+}
+
+Table plans {
+  id uuid [pk]
+  title varchar(255) [not null]
+  description text
+  creator_id uuid [not null, ref: > users.id]
+  visibility varchar(20) [not null, default: 'Public', note: 'Public | Private']
+  is_template boolean [default: false]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [note: 'Soft delete']
+  
+  indexes {
+    creator_id
+    deleted_at
+  }
+}
+
+Table plan_items {
+  id uuid [pk]
+  plan_id uuid [not null, ref: > plans.id]
+  place_id uuid [not null, ref: > places.id]
+  order int [not null, default: 0]
+  start_time timestamp
+  selected_options jsonb [note: 'User choices from dynamic menu']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [note: 'Soft delete']
+  
+  indexes {
+    plan_id
+    place_id
+    deleted_at
+  }
+}
